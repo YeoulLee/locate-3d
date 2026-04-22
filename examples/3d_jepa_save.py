@@ -31,7 +31,12 @@ dataset = Locate3DDataset(
 # Load 3D JEPA model
 model_3djepa = Encoder3DJEPA.from_pretrained("facebook/3d-jepa")
 model_3djepa.eval()  # Set to evaluation mode
-model_3djepa = model_3djepa.cuda()  # Move to GPU
+if torch.cuda.is_available():
+    device = torch.device("cuda")
+    model_3djepa = model_3djepa.to(device)  # Move to GPU
+else:
+    device = torch.device("cpu")
+    print("CUDA not available, using CPU")
 
 # Create output directory
 output_dir = "outputs/3d_jepa_embeddings"
@@ -55,32 +60,30 @@ for idx in range(len(dataset)):
         # Downsample pointcloud
         featurized_pc = downsample(data["featurized_sensor_pointcloud"], MAX_POINTS)
         
+        # Ensure featurized_pc is on the correct device
+        if isinstance(featurized_pc, dict):
+            featurized_pc = {k: v.to(device) if hasattr(v, 'to') else v for k, v in featurized_pc.items()}
+        elif hasattr(featurized_pc, 'to'):
+            featurized_pc = featurized_pc.to(device)
+        
         try:
             # Check input data
             if isinstance(featurized_pc, dict):
-                # If it's a dict, extract the point cloud tensor
-                if "xyz" in featurized_pc:
-                    pc_input = featurized_pc["xyz"]
-                elif "points" in featurized_pc:
-                    pc_input = featurized_pc["points"]
-                else:
-                    pc_input = list(featurized_pc.values())[0]
+                # Log input info for debugging
+                print(f"\nProcessing scene {scene_name}:")
+                print(f"  Dict keys: {list(featurized_pc.keys())}")
+                if "points" in featurized_pc:
+                    print(f"  Points shape: {featurized_pc['points'].shape}")
+                    print(f"  Points device: {featurized_pc['points'].device}")
+                if "features_clip" in featurized_pc:
+                    print(f"  Features_clip shape: {featurized_pc['features_clip'].shape}")
+                    print(f"  Features_clip device: {featurized_pc['features_clip'].device}")
             else:
-                pc_input = featurized_pc
-            
-            # Ensure input is on GPU
-            if not pc_input.is_cuda:
-                pc_input = pc_input.cuda()
-            
-            # Log input info for debugging
-            print(f"\nProcessing scene {scene_name}:")
-            print(f"  Input shape: {pc_input.shape}")
-            print(f"  Input dtype: {pc_input.dtype}")
-            print(f"  Input device: {pc_input.device}")
+                print(f"  Input type: {type(featurized_pc)}")
             
             # Run encoder with no_grad
             with torch.no_grad():
-                output = model_3djepa(pc_input)
+                output = model_3djepa(featurized_pc)
             
             # Save output
             output_path = os.path.join(output_dir, f"{scene_name}.pt")
