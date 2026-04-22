@@ -52,6 +52,12 @@ for idx in range(len(dataset)):
         data = dataset[idx]
         scene_name = data["scene_name"]
         
+        # Ensure data is on the correct device
+        if isinstance(data["featurized_sensor_pointcloud"], dict):
+            data["featurized_sensor_pointcloud"] = {k: v.to(device) if hasattr(v, 'to') else v for k, v in data["featurized_sensor_pointcloud"].items()}
+        elif hasattr(data["featurized_sensor_pointcloud"], 'to'):
+            data["featurized_sensor_pointcloud"] = data["featurized_sensor_pointcloud"].to(device)
+        
         # Skip if already processed
         if scene_name in processed_scenes:
             continue
@@ -59,12 +65,6 @@ for idx in range(len(dataset)):
         
         # Downsample pointcloud
         featurized_pc = downsample(data["featurized_sensor_pointcloud"], MAX_POINTS)
-        
-        # Ensure featurized_pc is on the correct device
-        if isinstance(featurized_pc, dict):
-            featurized_pc = {k: v.to(device) if hasattr(v, 'to') else v for k, v in featurized_pc.items()}
-        elif hasattr(featurized_pc, 'to'):
-            featurized_pc = featurized_pc.to(device)
         
         try:
             # Check input data
