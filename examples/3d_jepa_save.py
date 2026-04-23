@@ -83,11 +83,16 @@ for idx in range(len(dataset)):
             
             # Run encoder with no_grad
             with torch.no_grad():
-                output = model_3djepa(featurized_pc)
+                model_output = model_3djepa(featurized_pc)
+            
+            output = {
+                "features": model_output.cpu() if hasattr(model_output, 'cpu') else model_output,
+                "points": featurized_pc["points"].cpu() if hasattr(featurized_pc["points"], 'cpu') else featurized_pc["points"]
+            }
             
             # Save output
             output_path = os.path.join(output_dir, f"{scene_name}.pt")
-            torch.save(output.cpu() if hasattr(output, 'cpu') else output, output_path)
+            torch.save(output, output_path)
             print(f"  ✓ Saved embedding to {output_path}")
             
         except RuntimeError as model_e:
