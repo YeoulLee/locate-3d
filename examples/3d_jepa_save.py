@@ -65,15 +65,22 @@ for idx in range(len(dataset)):
 
         # Align tensor lengths: CLIP/DINO featurization in preprocessing can
         # produce point counts that differ by a few, which breaks torch.cat
-        # inside the encoder. Truncate every tensor to the shared minimum.
+        # inside the encoder. Only the reduced tensors that the encoder
+        # actually consumes need to share a length; *_original keys are the
+        # pre-reduction pointcloud and must be left alone.
         pc_dict = data["featurized_sensor_pointcloud"]
         if isinstance(pc_dict, dict):
-            lengths = [v.shape[0] for v in pc_dict.values() if hasattr(v, "shape") and v.ndim > 0]
-            if lengths and min(lengths) != max(lengths):
-                min_len = min(lengths)
-                print(f"  ! Aligning mismatched tensor lengths for {scene_name}: {lengths} -> {min_len}")
+            reduced_keys = ("points", "rgb", "features_clip", "features_dino")
+            lengths = {
+                k: pc_dict[k].shape[0]
+                for k in reduced_keys
+                if k in pc_dict and hasattr(pc_dict[k], "shape") and pc_dict[k].ndim > 0
+            }
+            if lengths and min(lengths.values()) != max(lengths.values()):
+                min_len = min(lengths.values())
+                print(f"  ! Aligning mismatched reduced-tensor lengths for {scene_name}: {lengths} -> {min_len}")
                 pc_dict = {
-                    k: (v[:min_len] if hasattr(v, "shape") and v.ndim > 0 else v)
+                    k: (v[:min_len] if k in lengths else v)
                     for k, v in pc_dict.items()
                 }
                 data["featurized_sensor_pointcloud"] = pc_dict
