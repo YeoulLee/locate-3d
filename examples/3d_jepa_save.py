@@ -57,12 +57,27 @@ for idx in range(len(dataset)):
             data["featurized_sensor_pointcloud"] = {k: v.to(device) if hasattr(v, 'to') else v for k, v in data["featurized_sensor_pointcloud"].items()}
         elif hasattr(data["featurized_sensor_pointcloud"], 'to'):
             data["featurized_sensor_pointcloud"] = data["featurized_sensor_pointcloud"].to(device)
-        
+
         # Skip if already processed
         if scene_name in processed_scenes:
             continue
         processed_scenes.add(scene_name)
-        
+
+        # Align tensor lengths: CLIP/DINO featurization in preprocessing can
+        # produce point counts that differ by a few, which breaks torch.cat
+        # inside the encoder. Truncate every tensor to the shared minimum.
+        pc_dict = data["featurized_sensor_pointcloud"]
+        if isinstance(pc_dict, dict):
+            lengths = [v.shape[0] for v in pc_dict.values() if hasattr(v, "shape") and v.ndim > 0]
+            if lengths and min(lengths) != max(lengths):
+                min_len = min(lengths)
+                print(f"  ! Aligning mismatched tensor lengths for {scene_name}: {lengths} -> {min_len}")
+                pc_dict = {
+                    k: (v[:min_len] if hasattr(v, "shape") and v.ndim > 0 else v)
+                    for k, v in pc_dict.items()
+                }
+                data["featurized_sensor_pointcloud"] = pc_dict
+
         # Downsample pointcloud
         featurized_pc = downsample(data["featurized_sensor_pointcloud"], MAX_POINTS)
         
