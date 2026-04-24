@@ -42,26 +42,35 @@ else:
 output_dir = "outputs/3d_jepa_embeddings"
 os.makedirs(output_dir, exist_ok=True)
 
-# Track processed scenes to avoid duplicates
-processed_scenes = set()
+# Build the list of unique-scene annotation indices up front so we don't pay
+# the cost of loading a scene (mesh + featurized pointcloud from disk) for
+# every duplicate annotation. Dedup key matches the cache-file key used by
+# Locate3DDataset: (scene_dataset, scene_id, frames_used).
+seen_scene_keys = set()
+unique_indices = []
+for idx, anno in enumerate(dataset.annos):
+    scene_dataset = Locate3DDataset.get_scene_dataset_from_annotation(anno)
+    frames_used = tuple(anno["frames_used"]) if "frames_used" in anno else None
+    key = (scene_dataset, anno["scene_id"], frames_used)
+    if key in seen_scene_keys:
+        continue
+    seen_scene_keys.add(key)
+    unique_indices.append(idx)
+
+print(f"Total annotations: {len(dataset)}, unique scenes: {len(unique_indices)}")
+
 failed_scenes = []
 
-# Process each scene (skip duplicates)
-for idx in range(len(dataset)):
+for idx in unique_indices:
     try:
         data = dataset[idx]
         scene_name = data["scene_name"]
-        
+
         # Ensure data is on the correct device
         if isinstance(data["featurized_sensor_pointcloud"], dict):
             data["featurized_sensor_pointcloud"] = {k: v.to(device) if hasattr(v, 'to') else v for k, v in data["featurized_sensor_pointcloud"].items()}
         elif hasattr(data["featurized_sensor_pointcloud"], 'to'):
             data["featurized_sensor_pointcloud"] = data["featurized_sensor_pointcloud"].to(device)
-
-        # Skip if already processed
-        if scene_name in processed_scenes:
-            continue
-        processed_scenes.add(scene_name)
 
         # Align tensor lengths: CLIP/DINO featurization in preprocessing can
         # produce point counts that differ by a few, which breaks torch.cat
@@ -138,7 +147,8 @@ for idx in range(len(dataset)):
 
 print("\n" + "="*60)
 print("Processing complete.")
-print(f"Total scenes processed: {len(processed_scenes)}")
+print(f"Total unique scenes attempted: {len(unique_indices)}")
+print(f"Total scenes succeeded: {len(unique_indices) - len(failed_scenes)}")
 if failed_scenes:
     print(f"Failed scenes: {len(failed_scenes)}")
     for scene, error_type, error_msg in failed_scenes:
